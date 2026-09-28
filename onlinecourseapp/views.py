@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from .models import Question, Choice, Submission
+from django.contrib.auth.models import User
+from .models import Question, Choice, Submission, Course, Enrollment
 
 
 def exam(request):
@@ -17,8 +18,31 @@ def submit(request, course_id):
 
         questions = Question.objects.prefetch_related("choice_set").all()
 
+        # Get or create the course
+        course, created = Course.objects.get_or_create(
+            id=course_id,
+            defaults={"name": "Online Course Mock Exam"}
+        )
+
+        # Use logged-in user, or first available user for mock exam
+        if request.user.is_authenticated:
+            user = request.user
+        else:
+            user = User.objects.first()
+
+        # Create or get enrollment
+        enrollment, created = Enrollment.objects.get_or_create(
+            user=user,
+            course=course,
+            defaults={"mode": Enrollment.AUDIT}
+        )
+
+        # Create one submission for the complete exam
+        submission = Submission.objects.create(
+            enrollment=enrollment
+        )
+
         score = 0
-        first_submission_id = None
 
         for question in questions:
 
@@ -34,13 +58,8 @@ def submit(request, course_id):
                     question=question
                 )
 
-                submission = Submission.objects.create(
-                    question=question,
-                    selected_choice=choice
-                )
-
-                if first_submission_id is None:
-                    first_submission_id = submission.id
+                # Store selected choice in ManyToMany field
+                submission.choices.add(choice)
 
                 if choice.is_correct:
                     score += 1
@@ -48,12 +67,11 @@ def submit(request, course_id):
         request.session["score"] = score
         request.session["total"] = questions.count()
 
-        if first_submission_id:
-            return redirect(
-                "show_exam_result",
-                course_id=course_id,
-                submission_id=first_submission_id
-            )
+        return redirect(
+            "show_exam_result",
+            course_id=course_id,
+            submission_id=submission.id
+        )
 
     return redirect("exam")
 
@@ -70,6 +88,7 @@ def show_exam_result(request, course_id, submission_id):
     ).all()
 
     score = request.session.get("score", 0)
+
     total = request.session.get(
         "total",
         questions.count()
