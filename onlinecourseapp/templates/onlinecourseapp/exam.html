@@ -23,7 +23,7 @@
 
             {% if questions %}
 
-            <form method="post" action="{% url 'submit' %}">
+            <form method="post" action="{% url 'submit' course_id=1 %}">
                 {% csrf_token %}
 
                 {% for question in questions %}

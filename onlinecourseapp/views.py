@@ -8,31 +8,39 @@ def exam(request):
     return render(
         request,
         "onlinecourseapp/exam.html",
-        {
-            "questions": questions
-        }
+        {"questions": questions}
     )
 
 
-def submit(request):
+def submit(request, course_id):
     if request.method == "POST":
+
         questions = Question.objects.prefetch_related("choice_set").all()
+
         score = 0
+        first_submission_id = None
 
         for question in questions:
-            selected_id = request.POST.get(f"question_{question.id}")
+
+            selected_id = request.POST.get(
+                f"question_{question.id}"
+            )
 
             if selected_id:
+
                 choice = get_object_or_404(
                     Choice,
                     id=selected_id,
                     question=question
                 )
 
-                Submission.objects.create(
+                submission = Submission.objects.create(
                     question=question,
                     selected_choice=choice
                 )
+
+                if first_submission_id is None:
+                    first_submission_id = submission.id
 
                 if choice.is_correct:
                     score += 1
@@ -40,14 +48,45 @@ def submit(request):
         request.session["score"] = score
         request.session["total"] = questions.count()
 
-        return redirect("show_exam_result")
+        if first_submission_id:
+            return redirect(
+                "show_exam_result",
+                course_id=course_id,
+                submission_id=first_submission_id
+            )
 
     return redirect("exam")
 
 
-def show_exam_result(request):
+def show_exam_result(request, course_id, submission_id):
+
+    get_object_or_404(
+        Submission,
+        id=submission_id
+    )
+
+    questions = Question.objects.prefetch_related(
+        "choice_set"
+    ).all()
+
     score = request.session.get("score", 0)
-    total = request.session.get("total", 0)
+    total = request.session.get(
+        "total",
+        questions.count()
+    )
+
+    results = []
+
+    for question in questions:
+
+        correct_choice = question.choice_set.filter(
+            is_correct=True
+        ).first()
+
+        results.append({
+            "question": question,
+            "correct_choice": correct_choice,
+        })
 
     return render(
         request,
@@ -55,5 +94,6 @@ def show_exam_result(request):
         {
             "score": score,
             "total": total,
+            "results": results,
         }
     )
